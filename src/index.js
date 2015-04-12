@@ -35,7 +35,11 @@ function asNodeCallback(target, name, descriptor) {
  */
 function asRegExp(maybeRegexp) {
   if (typeof maybeRegexp === 'string') {
-    return new RegExp(escapeRegexp(maybeRegexp));
+    let src = escapeRegexp(maybeRegexp) + '$';
+    if (src[0] !== '.') {
+      src = '.' + src;
+    }
+    return new RegExp(src);
   } else {
     return maybeRegexp;
   }
