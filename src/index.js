@@ -41,11 +41,24 @@ function asRegExp(maybeRegexp) {
   }
 }
 
+function parsePackageData(src) {
+  let data = JSON.parse(src);
+  if (data.webpack && data.webpack.loaders) {
+    data.webpack.loaders.forEach(loader => {
+      if (typeof loader.loader === 'string') {
+        loader.test = asRegExp(loader.test);
+      }
+    });
+  }
+  return data;
+}
+
 export default class PackageLoadersPlugin {
 
   constructor(packageFilename = 'package.json') {
     this.packageFilename = packageFilename;
     this._packagesByDirectory = {};
+    this._packageDirectoriesByDirectory = {};
   }
 
   apply(compiler) {
@@ -75,30 +88,26 @@ export default class PackageLoadersPlugin {
    * Find a package metadata for a specified resource.
    */
   async findPackageForResource(resource) {
-    let requestDirname = path.dirname(resource);
-    // TODO: We are not using caching fs here.
-    let packageDirname = await findParentDirPromise(requestDirname, this.packageFilename);
+    let dirname = path.dirname(resource);
+    let packageDirname = this._packageDirectoriesByDirectory[dirname];
+    if (packageDirname === undefined) {
+      // TODO: We are not using caching fs here.
+      packageDirname = await findParentDirPromise(dirname, this.packageFilename);
+      this._packageDirectoriesByDirectory[dirname] = packageDirname;
+    }
     if (!packageDirname) {
       log(`no package metadata found for ${resource} resource`);
       return null;
     }
-    if (this._packagesByDirectory[packageDirname] !== undefined) {
-      log(`found cached package metadata for ${resource} resource`);
-      return this._packagesByDirectory[packageDirname];
+    let packageData = this._packagesByDirectory[packageDirname];
+    if (packageData === undefined) {
+      log(`reading package data for ${resource}`);
+      let packageFilename = path.join(packageDirname, this.packageFilename);
+      // TODO: We are not using caching fs here.
+      let packageSource = await readFilePromise(packageFilename, 'utf8');
+      packageData = parsePackageData(packageSource);
+      this._packagesByDirectory[packageDirname] = packageData;
     }
-    let packageFilename = path.join(packageDirname, this.packageFilename);
-    // TODO: We are not using caching fs here.
-    let packageSource = await readFilePromise(packageFilename, 'utf8');
-    let packageData = JSON.parse(packageSource);
-    if (packageData.webpack && packageData.webpack.loaders) {
-      packageData.webpack.loaders.forEach(loader => {
-        if (typeof loader.loader === 'string') {
-          loader.test = asRegExp(loader.test);
-        }
-      });
-    }
-    log(`found package metadata for ${resource} resource`);
-    this._packagesByDirectory[packageDirname] = packageData;
     return packageData;
   }
 }
