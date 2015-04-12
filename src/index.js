@@ -43,7 +43,8 @@ function asRegExp(maybeRegexp) {
 
 export default class PackageLoadersPlugin {
 
-  constructor() {
+  constructor(packageFilename = 'package.json') {
+    this.packageFilename = packageFilename;
     this._packagesByDirectory = {};
   }
 
@@ -76,7 +77,7 @@ export default class PackageLoadersPlugin {
   async findPackageForResource(resource) {
     let requestDirname = path.dirname(resource);
     // TODO: We are not using caching fs here.
-    let packageDirname = await findParentDirPromise(requestDirname, 'package.json');
+    let packageDirname = await findParentDirPromise(requestDirname, this.packageFilename);
     if (!packageDirname) {
       log(`no package metadata found for ${resource} resource`);
       return null;
@@ -85,7 +86,7 @@ export default class PackageLoadersPlugin {
       log(`found cached package metadata for ${resource} resource`);
       return this._packagesByDirectory[packageDirname];
     }
-    let packageFilename = path.join(packageDirname, 'package.json');
+    let packageFilename = path.join(packageDirname, this.packageFilename);
     // TODO: We are not using caching fs here.
     let packageSource = await readFilePromise(packageFilename, 'utf8');
     let packageData = JSON.parse(packageSource);
