@@ -1,0 +1,10 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "main": "index.js",
+  "webpack": {
+    "loaders": [
+      {"test": ".js", "loader": "babel-loader"}
+    ]
+  }
+}
