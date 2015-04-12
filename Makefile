@@ -20,15 +20,10 @@ install link:
 	@npm $@
 
 test::
-	@$(BIN)/mocha \
-		$(MOCHA_OPTS) \
-		$(TESTS)
-
-ci::
-	@$(BIN)/mocha \
-		--watch \
-		$(MOCHA_OPTS) \
-		$(TESTS)
+	$(BIN)/babel-node $(BABEL_OPTS) $(BIN)/webpack \
+		--bail \
+		--context example/ \
+		--config example/webpack.config.js
 
 lint::
 
