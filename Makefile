@@ -30,13 +30,15 @@ ci::
 		$(MOCHA_OPTS) \
 		$(TESTS)
 
-release-patch: test lint
+lint::
+
+release-patch: build test lint
 	@$(call release,patch)
 
-release-minor: test lint
+release-minor: build test lint
 	@$(call release,minor)
 
-release-major: test lint
+release-major: build test lint
 	@$(call release,major)
 
 publish:
