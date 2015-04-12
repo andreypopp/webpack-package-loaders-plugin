@@ -2,7 +2,7 @@
 
 This is a [webpack][] plugin which discovers which loaders to apply to files
 through `package.json` metadata. This is similar to how [browserify][] allows to
-configure its transforms.
+configure its local per-package transforms.
 
 ## Installation
 
@@ -19,7 +19,7 @@ Activate plugin in `webpack.config.js`:
       plugins: [new PackageLoadersPlugin()]
     }
 
-When packages can define local configuration for loaders in their `package.json`
+Packages can define local configuration for loaders in their `package.json`
 files:
 
     {
@@ -36,7 +36,8 @@ files:
     }
 
 Now `PackageLoadersPlugin` will automatically activate `babel-loader` transform
-for all `.js` files withing the `some-package` package so you don't need to
+for all `.js` files within the `some-package` package so you don't need to
 specify `babel-loader` in global `webpack.config.js` configuration.
 
 [webpack]: http://webpack.github.io
+[browserify]: http://browserify.org
