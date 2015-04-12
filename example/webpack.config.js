@@ -1,5 +1,5 @@
 var path = require('path');
-var PackageLoadersPlugin = require('../lib/index');
+var PackageLoadersPlugin = require('../src/index');
 
 module.exports = {
   entry: require.resolve('./index'),

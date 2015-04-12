@@ -1,3 +1,7 @@
+/**
+ * @copyright 2015, Andrey Popp <8mayday@gmail.com>
+ */
+
 import fs from 'fs';
 import path from 'path';
 import debug from 'debug';
@@ -5,30 +9,12 @@ import webpack from 'webpack';
 import Promise from 'bluebird';
 import findParentDir from 'find-parent-dir';
 import escapeRegexp from 'escape-regexp';
+import nodeCallbackAdapter from 'node-callback-adapter';
 
 let findParentDirPromise = Promise.promisify(findParentDir);
 let readFilePromise = Promise.promisify(fs.readFile);
 
 let log = debug('webpack-package-loaders-plugin');
-
-/**
- * Turn a method which returns a promise into a method which accepts a
- * Node-style callback.
- */
-function asNodeCallback(target, name, descriptor) {
-  let value = descriptor.value;
-  return {
-    ...descriptor,
-    value(...args) {
-      let callback = args.pop();
-      let promise = new Promise((resolve, reject) =>
-          value.apply(this, args).then(resolve, reject));
-      promise.done(
-        result => callback(null, result),
-        err => callback(err));
-    }
-  };
-}
 
 /**
  * Coerce a string into a regexp.
@@ -66,14 +52,12 @@ export default class PackageLoadersPlugin {
   }
 
   apply(compiler) {
-    compiler.plugin('normal-module-factory', this.onNormalModuleFactory.bind(this, compiler));
+    compiler.plugin('normal-module-factory', factory =>
+      factory.plugin('after-resolve', (data, callback) =>
+        this.onAfterResolve(compiler, factory, data, callback)));
   }
 
-  onNormalModuleFactory(compiler, factory) {
-    factory.plugin('after-resolve', this.onAfterResolve.bind(this, compiler, factory));
-  }
-
-  @asNodeCallback
+  @nodeCallbackAdapter
   async onAfterResolve(compiler, factory, data) {
     log(`processing ${data.resource} resource`);
     let resolveLoader = Promise.promisify(compiler.resolvers.loader.resolve);
@@ -81,7 +65,7 @@ export default class PackageLoadersPlugin {
     if (packageData && packageData.webpack && packageData.webpack.loaders) {
       let loaders = await Promise.all(packageData.webpack.loaders
         .filter(loader => loader.test.test(data.resource))
-        .map(loader => resolveLoader(data.context, loader.loader)));
+        .map(loader => resolveLoader(path.dirname(data.resource), loader.loader)));
       log(`adding ${loaders} loaders for ${data.resource} resource`);
       data = {...data, loaders: data.loaders.concat(loaders)};
     }
@@ -93,25 +77,26 @@ export default class PackageLoadersPlugin {
    */
   async findPackageForResource(resource) {
     let dirname = path.dirname(resource);
-    let packageDirname = this._packageDirectoriesByDirectory[dirname];
-    if (packageDirname === undefined) {
+    if (this._packageDirectoriesByDirectory[dirname] === undefined) {
+      log(`finding package directory for ${dirname}`);
       // TODO: We are not using caching fs here.
-      packageDirname = await findParentDirPromise(dirname, this.packageFilename);
-      this._packageDirectoriesByDirectory[dirname] = packageDirname;
+      this._packageDirectoriesByDirectory[dirname] = findParentDirPromise(dirname, this.packageFilename);
     }
+    let packageDirname = await this._packageDirectoriesByDirectory[dirname];
     if (!packageDirname) {
       log(`no package metadata found for ${resource} resource`);
       return null;
     }
-    let packageData = this._packagesByDirectory[packageDirname];
-    if (packageData === undefined) {
-      log(`reading package data for ${resource}`);
-      let packageFilename = path.join(packageDirname, this.packageFilename);
-      // TODO: We are not using caching fs here.
-      let packageSource = await readFilePromise(packageFilename, 'utf8');
-      packageData = parsePackageData(packageSource);
-      this._packagesByDirectory[packageDirname] = packageData;
+    if (this._packagesByDirectory[packageDirname] === undefined) {
+      this._packagesByDirectory[packageDirname] = Promise.try(async () => {
+        log(`reading package data for ${packageDirname}`);
+        let packageFilename = path.join(packageDirname, this.packageFilename);
+        // TODO: We are not using caching fs here.
+        let packageSource = await readFilePromise(packageFilename, 'utf8');
+        return parsePackageData(packageSource);
+      });
     }
+    let packageData = await this._packagesByDirectory[packageDirname];
     return packageData;
   }
 }
