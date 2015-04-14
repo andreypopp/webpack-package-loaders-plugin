@@ -28,7 +28,7 @@ files:
       "webpack": {
         "loaders": [
           {
-            "test": ".js",
+            "test": "*.js",
             "loader": "babel-loader?stage=0"
           }
         ]
@@ -36,7 +36,7 @@ files:
     }
 
 Now `PackageLoadersPlugin` will automatically activate `babel-loader` transform
-for all `.js` files within the `some-package` package so you don't need to
+for all `*.js` files within the `some-package` package so you don't need to
 specify `babel-loader` in global `webpack.config.js` configuration.
 
 [webpack]: http://webpack.github.io

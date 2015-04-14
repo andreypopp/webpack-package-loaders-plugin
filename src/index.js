@@ -10,33 +10,20 @@ import Promise from 'bluebird';
 import findParentDir from 'find-parent-dir';
 import escapeRegexp from 'escape-regexp';
 import nodeCallbackAdapter from 'node-callback-adapter';
+import {Minimatch} from 'minimatch';
 
 let findParentDirPromise = Promise.promisify(findParentDir);
 let readFilePromise = Promise.promisify(fs.readFile);
 
 let log = debug('webpack-package-loaders-plugin');
 
-/**
- * Coerce a string into a regexp.
- */
-function asRegExp(maybeRegexp) {
-  if (typeof maybeRegexp === 'string') {
-    let src = escapeRegexp(maybeRegexp) + '$';
-    if (src[0] !== '.') {
-      src = '.' + src;
-    }
-    return new RegExp(src);
-  } else {
-    return maybeRegexp;
-  }
-}
 
 function parsePackageData(src) {
   let data = JSON.parse(src);
   if (data.webpack && data.webpack.loaders) {
     data.webpack.loaders.forEach(loader => {
       if (typeof loader.loader === 'string') {
-        loader.test = asRegExp(loader.test);
+        loader.test = new Minimatch(loader.test);
       }
     });
   }
@@ -61,12 +48,13 @@ export default class PackageLoadersPlugin {
   async onAfterResolve(compiler, factory, data) {
     log(`processing ${data.resource} resource`);
     let resolveLoader = Promise.promisify(compiler.resolvers.loader.resolve);
-    let packageData = await this.findPackageForResource(data.resource);
+    let {packageData, packageDirname} = await this.findPackageForResource(data.resource);
     if (packageData && packageData.webpack && packageData.webpack.loaders) {
+      let resourceRelative = path.relative(packageDirname, data.resource);
       let loaders = await Promise.all(packageData.webpack.loaders
-        .filter(loader => loader.test.test(data.resource))
+        .filter(loader => loader.test.match(resourceRelative))
         .map(loader => resolveLoader(path.dirname(data.resource), loader.loader)));
-      log(`adding ${loaders} loaders for ${data.resource} resource`);
+      log(`adding ${loaders} loaders for ${resourceRelative} resource`);
       data = {...data, loaders: data.loaders.concat(loaders)};
     }
     return data;
@@ -85,7 +73,7 @@ export default class PackageLoadersPlugin {
     let packageDirname = await this._packageDirectoriesByDirectory[dirname];
     if (!packageDirname) {
       log(`no package metadata found for ${resource} resource`);
-      return null;
+      return {packageData: null, packageDirname};
     }
     if (this._packagesByDirectory[packageDirname] === undefined) {
       this._packagesByDirectory[packageDirname] = Promise.try(async () => {
@@ -97,6 +85,6 @@ export default class PackageLoadersPlugin {
       });
     }
     let packageData = await this._packagesByDirectory[packageDirname];
-    return packageData;
+    return {packageData, packageDirname};
   }
 }
