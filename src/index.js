@@ -2,15 +2,15 @@
  * @copyright 2015, Andrey Popp <8mayday@gmail.com>
  */
 
-import fs from 'fs';
-import path from 'path';
-import debug from 'debug';
-import webpack from 'webpack';
-import Promise from 'bluebird';
-import findParentDir from 'find-parent-dir';
-import escapeRegexp from 'escape-regexp';
-import nodeCallbackAdapter from 'node-callback-adapter';
-import {Minimatch} from 'minimatch';
+import fs                   from 'fs';
+import path                 from 'path';
+import debug                from 'debug';
+import webpack              from 'webpack';
+import Promise              from 'bluebird';
+import findParentDir        from 'find-parent-dir';
+import escapeRegexp         from 'escape-regexp';
+import nodeCallbackAdapter  from 'node-callback-adapter';
+import {Minimatch}          from 'minimatch';
 
 let findParentDirPromise = Promise.promisify(findParentDir);
 let readFilePromise = Promise.promisify(fs.readFile);
@@ -18,10 +18,21 @@ let readFilePromise = Promise.promisify(fs.readFile);
 let log = debug('webpack-package-loaders-plugin');
 
 
-function parsePackageData(src) {
+function getByKeyPath(obj, keyPath) {
+  for (var i = 0; i < keyPath.length; i++) {
+    if (obj == null) {
+      return;
+    }
+    obj = obj[keyPath[i]];
+  }
+  return obj;
+}
+
+function parsePackageData(src, loadersKeyPath) {
   let data = JSON.parse(src);
-  if (data.webpack && data.webpack.loaders) {
-    data.webpack.loaders.forEach(loader => {
+  var loaders = getByKeyPath(data, loadersKeyPath);
+  if (loaders) {
+    loaders.forEach(loader => {
       if (typeof loader.loader === 'string') {
         loader.test = new Minimatch(loader.test);
       }
@@ -30,10 +41,25 @@ function parsePackageData(src) {
   return data;
 }
 
+function injectNoLoaders(packageData, packageDirname) {
+  return [];
+}
+
+const DEFAULT_OPTIONS = {
+  packageMeta: 'package.json',
+  loadersKeyPath: ['webpack', 'loaders'],
+  injectLoaders: injectNoLoaders
+}
+
+/**
+ * Plugin which injects per-package loaders.
+ *
+ * @param {Object} options Options object allows the following keys
+ */
 export default class PackageLoadersPlugin {
 
-  constructor(packageFilename = 'package.json') {
-    this.packageFilename = packageFilename;
+  constructor(options) {
+    this.options = {...DEFAULT_OPTIONS, ...options};
     this._packagesByDirectory = {};
     this._packageDirectoriesByDirectory = {};
   }
@@ -49,11 +75,17 @@ export default class PackageLoadersPlugin {
     log(`processing ${data.resource} resource`);
     let resolveLoader = Promise.promisify(compiler.resolvers.loader.resolve);
     let {packageData, packageDirname} = await this.findPackageForResource(data.resource);
-    if (packageData && packageData.webpack && packageData.webpack.loaders) {
+    if (!packageData) {
+      return data;
+    }
+    let loaders = getByKeyPath(packageData, this.options.loadersKeyPath)
+    if (loaders) {
       let resourceRelative = path.relative(packageDirname, data.resource);
-      let loaders = await Promise.all(packageData.webpack.loaders
+      loaders = loaders
         .filter(loader => loader.test.match(resourceRelative))
-        .map(loader => resolveLoader(path.dirname(data.resource), loader.loader)));
+        .concat(this.options.injectLoaders(packageData, packageDirname))
+        .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
+      loaders = await Promise.all(loaders);
       log(`adding ${loaders} loaders for ${resourceRelative} resource`);
       data = {...data, loaders: data.loaders.concat(loaders)};
     }
@@ -68,7 +100,7 @@ export default class PackageLoadersPlugin {
     if (this._packageDirectoriesByDirectory[dirname] === undefined) {
       log(`finding package directory for ${dirname}`);
       // TODO: We are not using caching fs here.
-      this._packageDirectoriesByDirectory[dirname] = findParentDirPromise(dirname, this.packageFilename);
+      this._packageDirectoriesByDirectory[dirname] = findParentDirPromise(dirname, this.options.packageMeta);
     }
     let packageDirname = await this._packageDirectoriesByDirectory[dirname];
     if (!packageDirname) {
@@ -78,10 +110,10 @@ export default class PackageLoadersPlugin {
     if (this._packagesByDirectory[packageDirname] === undefined) {
       this._packagesByDirectory[packageDirname] = Promise.try(async () => {
         log(`reading package data for ${packageDirname}`);
-        let packageFilename = path.join(packageDirname, this.packageFilename);
+        let packageMeta = path.join(packageDirname, this.options.packageMeta);
         // TODO: We are not using caching fs here.
-        let packageSource = await readFilePromise(packageFilename, 'utf8');
-        return parsePackageData(packageSource);
+        let packageSource = await readFilePromise(packageMeta, 'utf8');
+        return parsePackageData(packageSource, this.options.loadersKeyPath);
       });
     }
     let packageData = await this._packagesByDirectory[packageDirname];
