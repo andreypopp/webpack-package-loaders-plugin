@@ -79,17 +79,20 @@ export default class PackageLoadersPlugin {
       return data;
     }
     let loaders = getByKeyPath(packageData, this.options.loadersKeyPath)
-    if (loaders) {
-      let resourceRelative = path.relative(packageDirname, data.resource);
-      loaders = loaders
-        .filter(loader => loader.test.match(resourceRelative))
-        .concat(this.options.injectLoaders(packageData, packageDirname))
-        .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
-      loaders = await Promise.all(loaders);
-      log(`adding ${loaders} loaders for ${resourceRelative} resource`);
-      data = {...data, loaders: data.loaders.concat(loaders)};
+    if (!loaders) {
+      loaders = [];
     }
-    return data;
+    let resourceRelative = path.relative(packageDirname, data.resource);
+    loaders = loaders
+      .filter(loader => loader.test.match(resourceRelative))
+      .concat(this.options.injectLoaders(packageData, packageDirname))
+      .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
+    loaders = await Promise.all(loaders);
+    log(`adding ${loaders} loaders for ${resourceRelative} resource`);
+    return {
+      ...data,
+      loaders: data.loaders.concat(loaders)
+    };
   }
 
   /**
