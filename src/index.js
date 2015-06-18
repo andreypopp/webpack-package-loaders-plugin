@@ -4,7 +4,6 @@
 
 import path                 from 'path';
 import debug                from 'debug';
-import webpack              from 'webpack';
 import Promise              from 'bluebird';
 import escapeRegexp         from 'escape-regexp';
 import nodeCallbackAdapter  from 'node-callback-adapter';
@@ -117,6 +116,7 @@ export default class PackageLoadersPlugin {
     this.options = {...DEFAULT_OPTIONS, ...options};
     this._packagesByDirectory = {};
     this._packageMetadatFilenameByDirectory = {};
+    this._loadersByResource = {};
   }
 
   apply(compiler) {
@@ -127,6 +127,12 @@ export default class PackageLoadersPlugin {
 
   @nodeCallbackAdapter
   async onAfterResolve(compiler, factory, data) {
+    if (this._loadersByResource[data.resource] !== undefined) {
+      return {
+        ...data,
+        loaders: data.loaders.concat(this._loadersByResource[data.resource])
+      };
+    }
     log(`processing ${data.resource} resource`);
     let resolveLoader = Promise.promisify(compiler.resolvers.loader.resolve);
     let fs = compiler.inputFileSystem;
@@ -150,6 +156,7 @@ export default class PackageLoadersPlugin {
       })
       .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
     loaders = await Promise.all(loaders);
+    this._loadersByResource[data.resource] = loaders;
     log(`adding ${loaders} loaders for ${resourceRelative} resource`);
     return {
       ...data,
