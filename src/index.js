@@ -84,8 +84,14 @@ export default class PackageLoadersPlugin {
     }
     let resourceRelative = path.relative(packageDirname, data.resource);
     loaders = loaders
-      .filter(loader => loader.test.match(resourceRelative))
       .concat(this.options.injectLoaders(packageData, packageDirname))
+      .filter(loader => {
+        if (loader.test instanceof RegExp) {
+          return loader.test.exec(resourceRelative);
+        } else {
+          return loader.test.match(resourceRelative);
+        }
+      })
       .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
     loaders = await Promise.all(loaders);
     log(`adding ${loaders} loaders for ${resourceRelative} resource`);
