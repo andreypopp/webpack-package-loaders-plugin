@@ -2,21 +2,76 @@
  * @copyright 2015, Andrey Popp <8mayday@gmail.com>
  */
 
-import fs                   from 'fs';
 import path                 from 'path';
 import debug                from 'debug';
 import webpack              from 'webpack';
 import Promise              from 'bluebird';
-import findParentDir        from 'find-parent-dir';
 import escapeRegexp         from 'escape-regexp';
 import nodeCallbackAdapter  from 'node-callback-adapter';
 import {Minimatch}          from 'minimatch';
 
-let findParentDirPromise = Promise.promisify(findParentDir);
-let readFilePromise = Promise.promisify(fs.readFile);
-
 let log = debug('webpack-package-loaders-plugin');
 
+const SPLIT_PATH = /(\/|\\)/;
+
+function readFilePromise(fs, filename, encoding) {
+  return new Promise(function(resolve, reject) {
+    fs.readFile(filename, function(err, data) {
+      if (err) {
+        reject(err);
+      } else {
+        if (encoding !== undefined) {
+          data = data.toString(encoding);
+        }
+        resolve(data);
+      }
+    });
+  });
+}
+
+function splitPath(path) {
+  let parts = path.split(SPLIT_PATH);
+  if (parts.length === 0) {
+    return parts;
+  } else if (parts[0].length === 0) {
+    // when path starts with a slash, the first part is empty string
+    return parts.slice(1);
+  } else {
+    return parts;
+  }
+}
+
+function pathExists(fs, path) {
+  return new Promise(function(resolve, reject) {
+    fs.stat(path, function(err) {
+      resolve(!err);
+    });
+  });
+}
+
+function findPackageMetadataFilename(fs, currentFullPath, clue) {
+  currentFullPath = splitPath(currentFullPath);
+  if (!Array.isArray(clue)) {
+    clue = [clue];
+  }
+  return findPackageMetadataFilenameImpl(fs, currentFullPath, clue);
+}
+
+async function findPackageMetadataFilenameImpl(fs, parts, clue) {
+  if (parts.length === 0) {
+    return {filename: null, dirname: null};
+  } else {
+    let p = parts.join('');
+    for (let i = 0; i < clue.length; i++) {
+      let filename = path.join(p, clue[i]);
+      let exists = await pathExists(fs, filename);
+      if (exists) {
+        return {filename, dirname: p};
+      }
+    }
+    return findPackageMetadataFilenameImpl(fs, parts.slice(0, -1), clue);
+  }
+}
 
 function getByKeyPath(obj, keyPath) {
   for (var i = 0; i < keyPath.length; i++) {
@@ -61,7 +116,7 @@ export default class PackageLoadersPlugin {
   constructor(options) {
     this.options = {...DEFAULT_OPTIONS, ...options};
     this._packagesByDirectory = {};
-    this._packageDirectoriesByDirectory = {};
+    this._packageMetadatFilenameByDirectory = {};
   }
 
   apply(compiler) {
@@ -74,7 +129,8 @@ export default class PackageLoadersPlugin {
   async onAfterResolve(compiler, factory, data) {
     log(`processing ${data.resource} resource`);
     let resolveLoader = Promise.promisify(compiler.resolvers.loader.resolve);
-    let {packageData, packageDirname} = await this.findPackageForResource(data.resource);
+    let fs = compiler.inputFileSystem;
+    let {packageData, packageDirname} = await this.findPackageForResource(fs, data.resource);
     if (!packageData) {
       return data;
     }
@@ -84,7 +140,7 @@ export default class PackageLoadersPlugin {
     }
     let resourceRelative = path.relative(packageDirname, data.resource);
     loaders = loaders
-      .concat(this.options.injectLoaders(packageData, packageDirname))
+      .concat(this.options.injectLoaders(packageData, packageDirname, data.resource))
       .filter(loader => {
         if (loader.test instanceof RegExp) {
           return loader.test.exec(resourceRelative);
@@ -104,14 +160,13 @@ export default class PackageLoadersPlugin {
   /**
    * Find a package metadata for a specified resource.
    */
-  async findPackageForResource(resource) {
+  async findPackageForResource(fs, resource) {
     let dirname = path.dirname(resource);
-    if (this._packageDirectoriesByDirectory[dirname] === undefined) {
+    if (this._packageMetadatFilenameByDirectory[dirname] === undefined) {
       log(`finding package directory for ${dirname}`);
-      // TODO: We are not using caching fs here.
-      this._packageDirectoriesByDirectory[dirname] = findParentDirPromise(dirname, this.options.packageMeta);
+      this._packageMetadatFilenameByDirectory[dirname] = findPackageMetadataFilename(fs, dirname, this.options.packageMeta);
     }
-    let packageDirname = await this._packageDirectoriesByDirectory[dirname];
+    let {dirname: packageDirname, filename: packageMeta} = await this._packageMetadatFilenameByDirectory[dirname];
     if (!packageDirname) {
       log(`no package metadata found for ${resource} resource`);
       return {packageData: null, packageDirname};
@@ -119,9 +174,7 @@ export default class PackageLoadersPlugin {
     if (this._packagesByDirectory[packageDirname] === undefined) {
       this._packagesByDirectory[packageDirname] = Promise.try(async () => {
         log(`reading package data for ${packageDirname}`);
-        let packageMeta = path.join(packageDirname, this.options.packageMeta);
-        // TODO: We are not using caching fs here.
-        let packageSource = await readFilePromise(packageMeta, 'utf8');
+        let packageSource = await readFilePromise(fs, packageMeta, 'utf8');
         return parsePackageData(packageSource, this.options.loadersKeyPath);
       });
     }
