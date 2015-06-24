@@ -105,6 +105,16 @@ const DEFAULT_OPTIONS = {
   injectLoaders: injectNoLoaders
 }
 
+function testPattern(pattern, string) {
+  if (pattern instanceof RegExp) {
+    return pattern.exec(string);
+  } else if (pattern) {
+    return pattern.match(string);
+  } else {
+    return false;
+  }
+}
+
 /**
  * Plugin which injects per-package loaders.
  *
@@ -147,13 +157,10 @@ export default class PackageLoadersPlugin {
     let resourceRelative = path.relative(packageDirname, data.resource);
     loaders = loaders
       .concat(this.options.injectLoaders(packageData, packageDirname, data.resource))
-      .filter(loader => {
-        if (loader.test instanceof RegExp) {
-          return loader.test.exec(resourceRelative);
-        } else {
-          return loader.test.match(resourceRelative);
-        }
-      })
+      .filter(loader =>
+        (testPattern(loader.test, resourceRelative) ||
+         testPattern(loader.include, resourceRelative)) &&
+        !testPattern(loader.exclude, resourceRelative))
       .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
     loaders = await Promise.all(loaders);
     this._loadersByResource[data.resource] = loaders;
