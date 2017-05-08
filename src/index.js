@@ -2,12 +2,10 @@
  * @copyright 2015, Andrey Popp <8mayday@gmail.com>
  */
 
-import path                 from 'path';
-import debug                from 'debug';
-import Promise              from 'bluebird';
-import escapeRegexp         from 'escape-regexp';
-import nodeCallbackAdapter  from 'node-callback-adapter';
-import {Minimatch}          from 'minimatch';
+import path from 'path';
+import debug from 'debug';
+import escapeRegexp from 'escape-regexp';
+import {Minimatch} from 'minimatch';
 
 let log = debug('webpack-package-loaders-plugin');
 
@@ -102,8 +100,8 @@ function injectNoLoaders(packageData, packageDirname) {
 const DEFAULT_OPTIONS = {
   packageMeta: 'package.json',
   loadersKeyPath: ['webpack', 'loaders'],
-  injectLoaders: injectNoLoaders
-}
+  injectLoaders: injectNoLoaders,
+};
 
 function testPattern(pattern, string) {
   if (pattern instanceof RegExp) {
@@ -121,7 +119,6 @@ function testPattern(pattern, string) {
  * @param {Object} options Options object allows the following keys
  */
 export default class PackageLoadersPlugin {
-
   constructor(options) {
     this.options = {...DEFAULT_OPTIONS, ...options};
     this._packagesByDirectory = {};
@@ -132,42 +129,55 @@ export default class PackageLoadersPlugin {
   apply(compiler) {
     compiler.plugin('normal-module-factory', factory =>
       factory.plugin('after-resolve', (data, callback) =>
-        this.onAfterResolve(compiler, factory, data, callback)));
+        this.onAfterResolve(compiler, factory, data, callback),
+      ),
+    );
   }
 
-  @nodeCallbackAdapter
-  async onAfterResolve(compiler, factory, data) {
+  onAfterResolve(compiler, factory, data, cb) {
+    this.onAfterResolvePromise(compiler, factory, data).then(
+      result => cb(null, result),
+      err => cb(err),
+    );
+  }
+
+  async onAfterResolvePromise(compiler, factory, data) {
     if (this._loadersByResource[data.resource] !== undefined) {
       return {
         ...data,
-        loaders: data.loaders.concat(this._loadersByResource[data.resource])
+        loaders: data.loaders.concat(this._loadersByResource[data.resource]),
       };
     }
     log(`processing ${data.resource} resource`);
-    let resolveLoader = Promise.promisify(compiler.resolvers.loader.resolve);
+    let resolveLoader = promisify(compiler.resolvers.loader.resolve);
     let fs = compiler.inputFileSystem;
-    let {packageData, packageDirname} = await this.findPackageForResource(fs, data.resource);
+    let {packageData, packageDirname} = await this.findPackageForResource(
+      fs,
+      data.resource,
+    );
     if (!packageData) {
       return data;
     }
-    let loaders = getByKeyPath(packageData, this.options.loadersKeyPath)
+    let loaders = getByKeyPath(packageData, this.options.loadersKeyPath);
     if (!loaders) {
       loaders = [];
     }
     let resourceRelative = path.relative(packageDirname, data.resource);
     loaders = loaders
       .concat(this.options.injectLoaders(packageData, packageDirname, data.resource))
-      .filter(loader =>
-        (testPattern(loader.test, resourceRelative) ||
-         testPattern(loader.include, resourceRelative)) &&
-        !testPattern(loader.exclude, resourceRelative))
+      .filter(
+        loader =>
+          (testPattern(loader.test, resourceRelative) ||
+            testPattern(loader.include, resourceRelative)) &&
+          !testPattern(loader.exclude, resourceRelative),
+      )
       .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
     loaders = await Promise.all(loaders);
     this._loadersByResource[data.resource] = loaders;
     log(`adding ${loaders} loaders for ${resourceRelative} resource`);
     return {
       ...data,
-      loaders: data.loaders.concat(loaders)
+      loaders: data.loaders.concat(loaders),
     };
   }
 
@@ -178,15 +188,20 @@ export default class PackageLoadersPlugin {
     let dirname = path.dirname(resource);
     if (this._packageMetadatFilenameByDirectory[dirname] === undefined) {
       log(`finding package directory for ${dirname}`);
-      this._packageMetadatFilenameByDirectory[dirname] = findPackageMetadataFilename(fs, dirname, this.options.packageMeta);
+      this._packageMetadatFilenameByDirectory[dirname] = findPackageMetadataFilename(
+        fs,
+        dirname,
+        this.options.packageMeta,
+      );
     }
-    let {dirname: packageDirname, filename: packageMeta} = await this._packageMetadatFilenameByDirectory[dirname];
+    let {dirname: packageDirname, filename: packageMeta} = await this
+      ._packageMetadatFilenameByDirectory[dirname];
     if (!packageDirname) {
       log(`no package metadata found for ${resource} resource`);
       return {packageData: null, packageDirname};
     }
     if (this._packagesByDirectory[packageDirname] === undefined) {
-      this._packagesByDirectory[packageDirname] = Promise.try(async () => {
+      this._packagesByDirectory[packageDirname] = Promise.resolve(null).then(async () => {
         log(`reading package data for ${packageDirname}`);
         let packageSource = await readFilePromise(fs, packageMeta, 'utf8');
         return parsePackageData(packageSource, this.options.loadersKeyPath);
@@ -195,4 +210,20 @@ export default class PackageLoadersPlugin {
     let packageData = await this._packagesByDirectory[packageDirname];
     return {packageData, packageDirname};
   }
+}
+
+function promisify(f) {
+  return function(...args) {
+    return new Promise((resolve, reject) => {
+      function promisifyCallback(err, result) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      }
+      args.push(promisifyCallback);
+      f(...args);
+    });
+  };
 }

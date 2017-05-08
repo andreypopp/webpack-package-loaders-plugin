@@ -4,7 +4,10 @@
   "description": "Webpack plugin which applies loaders defined in package.json",
   "main": "lib/index.js",
   "devDependencies": {
-    "babel": "5.6.14",
+    "babel-cli": "^6.0.0",
+    "babel-plugin-transform-object-rest-spread": "^6.23.0",
+    "babel-preset-env": "^1.4.0",
+    "prettier": "^1.3.1",
     "webpack": "^1.8.4"
   },
   "keywords": [
@@ -22,11 +25,8 @@
   "homepage": "https://github.com/andreypopp/webpack-package-loaders-plugin",
   "license": "MIT",
   "dependencies": {
-    "babel-runtime": "5.6.15",
-    "bluebird": "^2.9.24",
     "debug": "^2.1.3",
     "escape-regexp": "0.0.1",
-    "minimatch": "^2.0.4",
-    "node-callback-adapter": "^1.0.1"
+    "minimatch": "^2.0.4"
   }
 }

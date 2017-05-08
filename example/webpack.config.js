@@ -1,16 +1,11 @@
 var path = require('path');
-var PackageLoadersPlugin = require('../src/index');
+var PackageLoadersPlugin = require('../src/index').default;
 
 module.exports = {
   entry: require.resolve('./index'),
   output: {
     path: path.join(__dirname, 'bundle'),
     filename: 'bundle.js'
-  },
-  module: {
-    loaders: [
-      {test: /\.js/, loader: 'jsx-loader?harmony=true'}
-    ]
   },
   plugins: [new PackageLoadersPlugin()]
 };

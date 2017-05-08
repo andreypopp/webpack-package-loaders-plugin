@@ -4,7 +4,14 @@
   "main": "index.js",
   "webpack": {
     "loaders": [
-      {"test": "*.js", "loader": "babel-loader"}
+      {
+        "test": "*.js",
+        "loader": "babel-loader?presets[]=react"
+      }
     ]
+  },
+  "devDependencies": {
+    "babel-loader": "^7.0.0",
+    "babel-preset-react": "^6.24.1"
   }
 }
