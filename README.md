@@ -4,6 +4,8 @@ This is a [webpack][] plugin which discovers which loaders to apply to files
 through `package.json` metadata. This is similar to how [browserify][] allows to
 configure its local per-package transforms.
 
+**WARNING:** Tested with webpack 1 only for now.
+
 ## Installation
 
     % npm install webpack-package-loaders-plugin
@@ -29,7 +31,7 @@ files:
         "loaders": [
           {
             "test": "*.js",
-            "loader": "babel-loader?stage=0"
+            "loader": "babel-loader?presets[]=es2015"
           }
         ]
       }
