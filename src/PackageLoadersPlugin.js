@@ -149,7 +149,9 @@ export default class PackageLoadersPlugin {
       };
     }
     log(`processing ${data.resource} resource`);
-    let resolveLoader = promisify(compiler.resolvers.loader.resolve);
+    let resolveLoader = promisify(
+      compiler.resolvers.loader.resolve.bind(compiler.resolvers.loader),
+    );
     let fs = compiler.inputFileSystem;
     let {packageData, packageDirname} = await this.findPackageForResource(
       fs,
@@ -171,7 +173,9 @@ export default class PackageLoadersPlugin {
             testPattern(loader.include, resourceRelative)) &&
           !testPattern(loader.exclude, resourceRelative),
       )
-      .map(loader => resolveLoader(path.dirname(data.resource), loader.loader));
+      .map(loader =>
+        resolveLoader(data.context, path.dirname(data.resource), loader.loader),
+      );
     loaders = await Promise.all(loaders);
     this._loadersByResource[data.resource] = loaders;
     log(`adding ${loaders} loaders for ${resourceRelative} resource`);
